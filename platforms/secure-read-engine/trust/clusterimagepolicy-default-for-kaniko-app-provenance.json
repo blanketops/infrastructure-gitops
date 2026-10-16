@@ -28,8 +28,8 @@
         "keyless": {
           "identities": [
             {
-              "issuer": "https://kubernetes.default.svc.cluster.local",
-              "subject": "https://kubernetes.io/namespaces/tekton-chains/serviceaccounts/tekton-chains-controller"
+              "issuer": "https://spire-spiffe-oidc-discovery-provider.spire-server.svc.cluster.local",
+              "subject": "spiffe://blanketops.dev/ns/tekton-chains/sa/tekton-chains-controller"
             }
           ],
           "trustRootRef": "default-for-kaniko-app",
