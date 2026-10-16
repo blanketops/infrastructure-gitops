@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:blanketops/infrastructure-gitops.git
+    repoURL: https://github.com/blanketops/infrastructure-gitops.git
     targetRevision: main
     path: platforms/secure-build-engine
   destination:
