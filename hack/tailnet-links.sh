@@ -34,11 +34,14 @@ shift $((OPTIND - 1))
 mode=${1:-install}
 [[ -n $host ]] || host=$(tailscale status --self --json | jq -r '.Self.DNSName | rtrimstr(".")')
 
-# name | cluster | namespace | target | port-forward ports | serve port | local scheme | health path | what
+# name | cluster | namespace | target | port-forward ports | serve port (- = this machine only) | local scheme | health path | what
 links=(
   "argocd|$read|argocd|svc/argocd-server|8081:443|8081|https|/|Argo CD (read cluster)"
-  "tornjak|$build|spire-server|svc/tornjak|3000:3000 10000:10000|3000|http|/|Tornjak UI (SPIRE)"
-  "tornjak-api|-|-|-|-|10000|http|/api/tornjak/serverinfo|Tornjak API, called by the UI"
+  # Tornjak stays on this machine: its API creates and deletes SPIRE entries
+  # without a login and allows any origin, so on the tailnet any page open in
+  # a browser there could register an identity. Publish it only behind an
+  # authenticating proxy.
+  "tornjak|$build|spire-server|svc/tornjak|3000:3000 10000:10000|-|http|/|Tornjak UI (SPIRE)"
   "tekton-dashboard|$build|tekton-pipelines|svc/tekton-dashboard|9097:9097|9097|http|/|Tekton Dashboard"
   "sonarqube|$build|default|svc/sonarqube-sonarqube|9000:9000|9000|http|/sonarqube/|SonarQube"
   "rekor|$build|rekor-system|svc/rekor-server|3443:443|3443|https|/api/v1/log|Rekor API"
@@ -48,7 +51,7 @@ links=(
   "observer|$build|-|observe|8002|8002|http|/|Supply chain observer (build cluster)"
 )
 
-local_port() { case $1 in tornjak-api) echo 10000 ;; *) local p=${2%%:*}; echo "${p%% *}" ;; esac; }
+local_port() { local p=${2%%:*}; echo "${p%% *}"; }
 
 install() {
   local bin=$HOME/.local/bin units=$HOME/.config/systemd/user
@@ -125,22 +128,15 @@ EOF
 
   for l in "${links[@]}"; do
     IFS='|' read -r name _ _ _ ports serve scheme _ <<<"$l"
+    if [[ $serve == - ]]; then
+      # Take it off the tailnet if an earlier version of this script served it.
+      [[ $name == tornjak ]] && { tailscale serve --https=3000 off || true; tailscale serve --https=10000 off || true; } >/dev/null 2>&1
+      continue
+    fi
     local backend=http
     [[ $scheme == https ]] && backend=https+insecure
     tailscale serve --bg --https="$serve" "$backend://127.0.0.1:$(local_port "$name" "$ports")" >/dev/null
   done
-
-  # The Tornjak UI tells the browser where its API is; the installer sets
-  # http://localhost:10000, which only works on this machine. Changing it
-  # restarts spire-server-0 (its datastore and keys are on a PVC), so only
-  # when it differs.
-  local want="https://$host:10000" have
-  have=$(kubectl --context "$build" -n spire-server get sts spire-server \
-    -o jsonpath='{.spec.template.spec.containers[?(@.name=="tornjak-frontend")].env[?(@.name=="REACT_APP_API_SERVER_URI")].value}')
-  if [[ $have != "$want" ]]; then
-    kubectl --context "$build" -n spire-server set env sts/spire-server -c tornjak-frontend REACT_APP_API_SERVER_URI="$want"
-    kubectl --context "$build" -n spire-server rollout status sts/spire-server --timeout=300s
-  fi
   sleep 10
 }
 
@@ -157,7 +153,13 @@ check() {
     -X POST -H 'Content-Type: application/json' -d '{}' "https://$host/" || true)
   printf '%-40s %-48s %s\n' "GitHub webhook (public, Funnel)" "https://$host/ via ${relay:-no public DNS}" "$code"
   for l in "${links[@]}"; do
-    IFS='|' read -r _ _ _ _ _ serve _ path what <<<"$l"
+    IFS='|' read -r name _ _ _ ports serve scheme path what <<<"$l"
+    if [[ $serve == - ]]; then
+      local u="$scheme://127.0.0.1:$(local_port "$name" "$ports")$path"
+      code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 15 "$u" || true)
+      printf '%-40s %-48s %s\n' "$what (this machine)" "$u" "$code"
+      continue
+    fi
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$host:$serve$path" || true)
     printf '%-40s %-48s %s\n' "$what (tailnet)" "https://$host:$serve$path" "$code"
   done

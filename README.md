@@ -84,14 +84,15 @@ read cluster                                  build cluster
 
 Everything is reached through the Tailscale name of the machine that runs both kind clusters,
 `pop-os.tailf8145.ts.net`. Only the GitHub webhook is public, through Tailscale Funnel; every other link is
-served tailnet-only, so it answers on devices signed in to the tailnet and nowhere else.
+served tailnet-only, so it answers on devices signed in to the tailnet and nowhere else. The solution's
+[Reaching the UIs](https://github.com/blanketops/secure-software-supplychain/blob/main/docs/access.md) is the
+reference for these links and for which UIs are safe to publish; this section covers what this repository runs.
 
 | Link | What | Reach | Backend |
 |---|---|---|---|
 | `https://pop-os.tailf8145.ts.net/` | GitHub push webhook, to the build engine's EventListener | Public (Funnel) | `127.0.0.1:8888`, the `kind-ingress-bridge` system unit, to ingress-nginx `172.18.255.200:80` |
 | `https://pop-os.tailf8145.ts.net:8081/` | Argo CD, in the read cluster | Tailnet | `argocd/argocd-server:443` |
-| `https://pop-os.tailf8145.ts.net:3000/` | Tornjak UI: SPIRE agents and registration entries | Tailnet | `spire-server/tornjak:3000` |
-| `https://pop-os.tailf8145.ts.net:10000/` | Tornjak API, which the UI calls from the browser | Tailnet | `spire-server/tornjak:10000` |
+| `http://127.0.0.1:3000/` | Tornjak UI: SPIRE agents and registration entries | This machine only | `spire-server/tornjak:3000` and `:10000`; its API writes SPIRE entries without a login, so it is never served on the tailnet |
 | `https://pop-os.tailf8145.ts.net:9097/` | Tekton Dashboard: PipelineRuns and their logs | Tailnet | `tekton-pipelines/tekton-dashboard:9097` |
 | `https://pop-os.tailf8145.ts.net:9000/sonarqube/` | SonarQube | Tailnet | `default/sonarqube-sonarqube:9000` |
 | `https://pop-os.tailf8145.ts.net:3443/api/v1/log` | Rekor API, the build engine's transparency log | Tailnet | `rekor-system/rekor-server:443` |
@@ -162,11 +163,7 @@ although the address is tailnet-only.
   it off the public Funnel hostname.
 - Re-export after any change on the build engine that rotates a trust anchor or alters a policy; nothing
   detects the drift automatically.
-- The solution's installer sets the Tornjak UI's API address to `http://localhost:10000`, which works only on
-  the machine itself. `hack/tailnet-links.sh` changes it on the running StatefulSet to the tailnet link, which
-  restarts `spire-server-0` (its datastore and keys are on a PVC, so entries and the CA are kept). Reinstalling
-  SPIRE puts the old value back; run the script again afterwards.
-- Admitting the signed image takes 4 to 8 seconds on this machine's uplink, which drops a quarter of its
+- Admitting the signed image takes 4 to 12 seconds on this machine's uplink, which drops a quarter of its
   packets at times, and was overrunning policy-controller's default 10-second webhook timeout. The read engine
   sets the maximum, 30 seconds (`policy-controller/webhook-timeout.yaml`). A timeout still refuses the pod, but
   Argo CD then reports `failed calling webhook ... context deadline exceeded` instead of the policy decision.
