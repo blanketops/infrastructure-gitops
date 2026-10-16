@@ -36,6 +36,19 @@ contacted during verification, and their URLs are left as rendered.
 | Rekor through the ingress, Fulcio and CT log unreachable | signed image | admitted |
 | Rekor through the ingress, Fulcio and CT log unreachable | image signed by an earlier install | refused by all four policies |
 
+On two kind clusters on one machine (`kind-blanketops` building, `kind-blanketops-read` running only
+policy-controller and this directory), the read cluster admitted the build cluster's signed image, refused the
+same app signed under an earlier signing identity and refused an unsigned image, and the build cluster's ingress
+logged the read cluster's Rekor lookups (`POST /api/v1/log/entries/retrieve`, 200).
+
+```
+read cluster                                  build cluster
+  pod admission                                 ingress-nginx 172.18.255.200
+    -> policy-controller ---------------------->  rekor.172-18-255-200.nip.io (TLS, supply-chain-ca)
+         |  Chains' entries, no bundle                -> rekor-server (TLS, verified)
+         +-> registry: signatures, attestations
+```
+
 ## Layout
 
 | Path | Contents |
@@ -66,9 +79,11 @@ contacted during verification, and their URLs are left as rendered.
 ## Known gaps
 
 - The Rekor host is `rekor.172-18-255-200.nip.io`, which resolves to this machine's MetalLB address and is
-  reachable only from it. A read engine elsewhere needs a host that resolves to the build engine's ingress; change
-  it in `rekor-ingress.yaml` and in the export's `-r`. The results above were measured on the build engine with
-  copies of the exported policies, not on a second cluster.
+  reachable only from containers on the same Docker network. A read engine elsewhere needs a host that resolves to
+  the build engine's ingress; change it in `rekor-ingress.yaml` and in the export's `-r`.
+- policy-controller validates ClusterImagePolicies with its own webhook, so they are rejected until it is running.
+  Argo CD's sync wave and retry cover this; applied by hand, run `kubectl apply --server-side -k
+  platforms/secure-read-engine` again once `policy-controller-webhook` is ready.
 - Rekor's write API is reachable on that host as well, because policy-controller's lookups are POST requests. Keep
   it off the public Funnel hostname.
 - The repository and the Argo CD cluster names in `argocd/` are placeholders until the repository is pushed and
