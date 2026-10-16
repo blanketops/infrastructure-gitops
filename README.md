@@ -61,6 +61,7 @@ read cluster                                  build cluster
 | `workloads/for-kaniko-app/` | A sample workload for the read engine: the signed image, pinned by digest, in a namespace that opts in to verification. |
 | `hack/sync-from-solution.sh` | Refreshes the vendored policy-controller from the solution. |
 | `hack/register-build-cluster.sh` | Registers the build cluster with the read cluster's Argo CD. The token stays in the cluster, never in Git. |
+| `hack/tailnet-links.sh` | Exposes the UIs and APIs of both clusters on this machine's Tailscale name and checks every link. |
 
 ## Getting started
 
@@ -78,6 +79,45 @@ read cluster                                  build cluster
 4. Label each workload namespace on the read engine with `policy.sigstore.dev/include=true`; policy-controller
    only verifies images in labelled namespaces.
 
+## Reaching the clusters
+
+Everything is reached through the Tailscale name of the machine that runs both kind clusters,
+`pop-os.tailf8145.ts.net`. Only the GitHub webhook is public, through Tailscale Funnel; every other link is
+served tailnet-only, so it answers on devices signed in to the tailnet and nowhere else.
+
+| Link | What | Reach | Backend |
+|---|---|---|---|
+| `https://pop-os.tailf8145.ts.net/` | GitHub push webhook, to the build engine's EventListener | Public (Funnel) | `127.0.0.1:8888`, the `kind-ingress-bridge` system unit, to ingress-nginx `172.18.255.200:80` |
+| `https://pop-os.tailf8145.ts.net:8081/` | Argo CD, in the read cluster | Tailnet | `argocd/argocd-server:443` |
+| `https://pop-os.tailf8145.ts.net:3000/` | Tornjak UI: SPIRE agents and registration entries | Tailnet | `spire-server/tornjak:3000` |
+| `https://pop-os.tailf8145.ts.net:10000/` | Tornjak API, which the UI calls from the browser | Tailnet | `spire-server/tornjak:10000` |
+| `https://pop-os.tailf8145.ts.net:9097/` | Tekton Dashboard: PipelineRuns and their logs | Tailnet | `tekton-pipelines/tekton-dashboard:9097` |
+| `https://pop-os.tailf8145.ts.net:9000/sonarqube/` | SonarQube | Tailnet | `default/sonarqube-sonarqube:9000` |
+| `https://pop-os.tailf8145.ts.net:3443/api/v1/log` | Rekor API, the build engine's transparency log | Tailnet | `rekor-system/rekor-server:443` |
+| `https://pop-os.tailf8145.ts.net:8443/` | for-kaniko-app, the sample workload in the read cluster | Tailnet | `workloads/for-kaniko-app:80` |
+
+Each tailnet link is a `kubectl port-forward` on `127.0.0.1`, run by a user systemd unit
+(`<name>-port-forward.service`) and served over HTTPS by `tailscale serve` on its own port. A port-forward keeps
+running after its pod is replaced but forwards nothing, so the units run it under `~/.local/bin/kpf-watch`, which
+exits when the local port stops answering and lets systemd start it again. Deleting the Tekton Dashboard pod
+brought its link back in about 15 seconds.
+
+```
+hack/tailnet-links.sh           # write the units and serve entries, then check every link
+hack/tailnet-links.sh check     # status of every link
+```
+
+The script needs the caller to be the Tailscale operator (`sudo tailscale set --operator=$USER`, once) and only
+restarts units whose definition changed. It checks the webhook through the public relay address: on this machine
+MagicDNS resolves the name to the tailnet address, which answers even when Funnel is down. When the webhook check
+fails while the local hop works (`curl -X POST -H 'Host: pop-os.tailf8145.ts.net' -d '{}' http://127.0.0.1:8888/`
+answers 202), Funnel has stopped accepting TLS after a network change; `sudo systemctl restart tailscaled` restores
+it, and the serve and Funnel configuration survive the restart. GitHub's delivery log
+(`gh api repos/<owner>/<repo>/hooks/<id>/deliveries`) shows such pushes as `500 ... EOF`; push again once the
+webhook check passes.
+
+The Argo CD admin password is kept outside Git, in `~/.config/argocd/admin-password` on that machine.
+
 ## Known gaps
 
 - The Rekor host is `rekor.172-18-255-200.nip.io`, which resolves to this machine's MetalLB address and is
@@ -90,3 +130,7 @@ read cluster                                  build cluster
   it off the public Funnel hostname.
 - Re-export after any change on the build engine that rotates a trust anchor or alters a policy; nothing
   detects the drift automatically.
+- The solution's installer sets the Tornjak UI's API address to `http://localhost:10000`, which works only on
+  the machine itself. `hack/tailnet-links.sh` changes it on the running StatefulSet to the tailnet link, which
+  restarts `spire-server-0` (its datastore and keys are on a PVC, so entries and the CA are kept). Reinstalling
+  SPIRE puts the old value back; run the script again afterwards.
