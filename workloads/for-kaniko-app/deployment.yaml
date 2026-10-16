@@ -12,7 +12,7 @@ spec:
       - name: web
         # Built from ntlaletsi70/for-kaniko-app@secure under the SPIFFE signing
         # identity. Pinned by digest: admission verifies exactly this image.
-        image: docker.io/nkanyezisolutions/for-kaniko-app@sha256:1ce7c51f7782327fe10f087814ce778adcc4e4b4ca94d0dfefdfe7ecf880161c
+        image: docker.io/nkanyezisolutions/for-kaniko-app@sha256:f833ec201d369bc468e22ba901241463e2abf66efe3159781a0a770dc5f225a9
         ports:
         - name: http
           containerPort: 8080
