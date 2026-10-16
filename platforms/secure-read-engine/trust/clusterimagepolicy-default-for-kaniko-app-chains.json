@@ -17,7 +17,7 @@
       {
         "ctlog": {
           "trustRootRef": "default-for-kaniko-app",
-          "url": "https://rekor-server.rekor-system.svc.cluster.local"
+          "url": "https://rekor.172-18-255-200.nip.io"
         },
         "keyless": {
           "identities": [

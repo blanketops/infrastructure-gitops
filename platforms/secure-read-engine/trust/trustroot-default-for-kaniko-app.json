@@ -33,7 +33,7 @@
       ],
       "tLogs": [
         {
-          "baseURL": "https://rekor-server.rekor-system.svc.cluster.local",
+          "baseURL": "https://rekor.172-18-255-200.nip.io",
           "hashAlgorithm": "sha-256",
           "publicKey": "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFRDVYTUVtelZCbUdaY3pIaDdTcE1Qc0hEb1hBMgprR003ZklwbDk3U1Vhb1FJYkE3RWlMd29abDEzL2hwRHR4Rm1VRnBNYjlhN1VGNWFkQmkwbTRKTmZnPT0KLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0t"
         }

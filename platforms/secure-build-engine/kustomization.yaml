@@ -16,3 +16,4 @@ resources:
 - githubwebhook.yaml
 - policyrole.yaml
 - supplychainpolicy.yaml
+- rekor-ingress.yaml
