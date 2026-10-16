@@ -62,6 +62,7 @@ read cluster                                  build cluster
 | `hack/sync-from-solution.sh` | Refreshes the vendored policy-controller from the solution. |
 | `hack/register-build-cluster.sh` | Registers the build cluster with the read cluster's Argo CD. The token stays in the cluster, never in Git. |
 | `hack/tailnet-links.sh` | Exposes the UIs and APIs of both clusters on this machine's Tailscale name and checks every link. |
+| `hack/argocd-github-sso.sh` | Turns on GitHub sign-in for the read cluster's Argo CD, limited to the `blanketops` organisation. |
 
 ## Getting started
 
@@ -124,7 +125,30 @@ it, and the serve and Funnel configuration survive the restart. GitHub's deliver
 (`gh api repos/<owner>/<repo>/hooks/<id>/deliveries`) shows such pushes as `500 ... EOF`; push again once the
 webhook check passes.
 
-The Argo CD admin password is kept outside Git, in `~/.config/argocd/admin-password` on that machine.
+The Argo CD admin password is kept outside Git, in `~/.config/argocd/admin-password` on that machine. It is the
+break-glass login; day to day, sign in with GitHub.
+
+### Signing in to Argo CD with GitHub
+
+Argo CD's bundled Dex signs people in with GitHub. Only members of the `blanketops` organisation can sign in,
+and they get `role:admin`; anyone else gets no access. GitHub has no API for creating OAuth Apps, so that step
+is done once in the browser, at `https://github.com/organizations/blanketops/settings/applications/new`:
+
+| Field | Value |
+|---|---|
+| Application name | `Argo CD (blanketops read cluster)` |
+| Homepage URL | `https://pop-os.tailf8145.ts.net:8081` |
+| Authorization callback URL | `https://pop-os.tailf8145.ts.net:8081/api/dex/callback` |
+
+Then generate a client secret and run, with the app's client ID:
+
+```
+hack/argocd-github-sso.sh -i <client-id>    # prompts for the client secret without echoing it
+```
+
+The script stores the secret only in the `argocd-secret` Secret, sets Argo CD's URL, the GitHub connector and
+the RBAC mapping, starts Dex and waits until it answers. The callback URL is a browser redirect, so it works
+although the address is tailnet-only.
 
 ## Known gaps
 
