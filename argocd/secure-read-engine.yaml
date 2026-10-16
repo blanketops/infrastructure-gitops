@@ -10,8 +10,8 @@ spec:
     targetRevision: main
     path: platforms/secure-read-engine
   destination:
-    # The Argo CD cluster secret of the read (workload) cluster.
-    name: read-cluster
+    # Argo CD runs in the read (workload) cluster, so this is its own cluster.
+    server: https://kubernetes.default.svc
     namespace: cosign-system
   syncPolicy:
     automated:
@@ -21,3 +21,11 @@ spec:
     # The policy-controller CRDs are large; client-side apply can exceed the
     # last-applied annotation limit.
     - ServerSideApply=true
+    # policy-controller validates ClusterImagePolicies with its own webhook,
+    # which refuses them until it is running; retry until it is.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
