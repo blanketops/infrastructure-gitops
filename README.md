@@ -134,3 +134,7 @@ The Argo CD admin password is kept outside Git, in `~/.config/argocd/admin-passw
   the machine itself. `hack/tailnet-links.sh` changes it on the running StatefulSet to the tailnet link, which
   restarts `spire-server-0` (its datastore and keys are on a PVC, so entries and the CA are kept). Reinstalling
   SPIRE puts the old value back; run the script again afterwards.
+- Admitting the signed image takes 4 to 8 seconds on this machine's uplink, which drops a quarter of its
+  packets at times, and was overrunning policy-controller's default 10-second webhook timeout. The read engine
+  sets the maximum, 30 seconds (`policy-controller/webhook-timeout.yaml`). A timeout still refuses the pod, but
+  Argo CD then reports `failed calling webhook ... context deadline exceeded` instead of the policy decision.
