@@ -1,0 +1,32 @@
+apiVersion: supplychain.blanketops.dev/v1alpha1
+kind: SupplyChain
+metadata:
+  labels:
+    app.kubernetes.io/name: secure-software-supply-chain
+    app.kubernetes.io/managed-by: kustomize
+  name: your-app
+spec:
+  repository: your-org/your-app
+  webhookHost: your-machine.your-tailnet.ts.net
+  image:
+    registry: docker.io
+    name: your-dockerhub-user/your-app
+    tagStrategy: git-sha
+    cloneSecret: github-ssh-credentials
+    registrySecret: registry-credentials
+  steps:
+    buildpacks: true
+    trivy: true
+    sign: true
+    attest: true
+    sonarQube:
+      #serverURL: http://sonarqube-sonarqube.secure-software-supply-chain-supply-chain.svc.cluster.local:9000 #deployed
+      serverURL: http://sonarqube-sonarqube.default.svc.cluster.local:9000/sonarqube
+      tokenSecretRef: sonarqube-token
+      projectKey: your-org_your-app
+
+  signing:
+    fulcioURL: https://fulcio-server.fulcio-system.svc.cluster.local
+    rekorURL: https://rekor-server.rekor-system.svc.cluster.local
+    ctLogURL: https://ctlog.ctlog-system.svc/fulcio
+  serviceAccountName: supply-chain-runner

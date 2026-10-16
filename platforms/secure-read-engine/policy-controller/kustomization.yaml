@@ -1,0 +1,8 @@
+# sigstore policy-controller, vendored from the solution's
+# dependencies/sigstore/policy-controller by hack/sync-from-solution.sh.
+# Do not edit these files by hand; re-run the sync.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- 00-namespace.yaml
+- release.yaml

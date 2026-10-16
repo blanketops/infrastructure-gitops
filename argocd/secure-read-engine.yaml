@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secure-read-engine
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:blanketops/infrastructure-gitops.git
+    targetRevision: main
+    path: platforms/secure-read-engine
+  destination:
+    # The Argo CD cluster secret of the read (workload) cluster.
+    name: read-cluster
+    namespace: cosign-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    # The policy-controller CRDs are large; client-side apply can exceed the
+    # last-applied annotation limit.
+    - ServerSideApply=true
