@@ -10,6 +10,7 @@
 #   -b  build cluster context  (default: kind-blanketops)
 #   -r  read cluster context   (default: kind-blanketops-read)
 #   -H  Tailscale DNS name     (default: this node's, from `tailscale status`)
+#   -s  supplychain binary     (default: ../secure-software-supply-chain/bin/supplychain)
 #   install (default) writes the units and serve entries, then runs check.
 #   check prints every link with the HTTP status it answers with now.
 #
@@ -19,12 +20,14 @@ set -euo pipefail
 build=kind-blanketops
 read=kind-blanketops-read
 host=""
-while getopts "b:r:H:" opt; do
+supplychain=$(cd "$(dirname "$0")/../.." && pwd)/secure-software-supply-chain/bin/supplychain
+while getopts "b:r:H:s:" opt; do
   case $opt in
     b) build=$OPTARG ;;
     r) read=$OPTARG ;;
     H) host=$OPTARG ;;
-    *) echo "usage: $0 [-b build-context] [-r read-context] [-H host] [install|check]" >&2; exit 2 ;;
+    s) supplychain=$OPTARG ;;
+    *) echo "usage: $0 [-b build-context] [-r read-context] [-H host] [-s supplychain] [install|check]" >&2; exit 2 ;;
   esac
 done
 shift $((OPTIND - 1))
@@ -40,6 +43,9 @@ links=(
   "sonarqube|$build|default|svc/sonarqube-sonarqube|9000:9000|9000|http|/sonarqube/|SonarQube"
   "rekor|$build|rekor-system|svc/rekor-server|3443:443|3443|https|/api/v1/log|Rekor API"
   "for-kaniko-app|$read|workloads|svc/for-kaniko-app|8090:80|8443|http|/|for-kaniko-app (read cluster workload)"
+  # Not a port-forward: `supplychain observe` runs its own kubectl proxy and
+  # forwards only the page's reads, so it is safe to serve on the tailnet.
+  "observer|$build|-|observe|8002|8002|http|/|Supply chain observer (build cluster)"
 )
 
 local_port() { case $1 in tornjak-api) echo 10000 ;; *) local p=${2%%:*}; echo "${p%% *}" ;; esac; }
@@ -75,16 +81,24 @@ EOF
   for l in "${links[@]}"; do
     IFS='|' read -r name ctx ns target ports serve scheme path what <<<"$l"
     [[ $ctx == - ]] && continue
-    local lp unit new
+    local lp unit new exec
     lp=$(local_port "$name" "$ports")
     unit=$units/$name-port-forward.service
+    exec="$bin/kpf-watch $scheme://127.0.0.1:$lp$path /usr/bin/env kubectl --context $ctx port-forward --address 127.0.0.1 -n $ns $target $ports"
+    if [[ $target == observe ]]; then
+      [[ -x $supplychain ]] || { echo "no supplychain binary at $supplychain (build it: go build -o bin/supplychain ./cmd/cli)" >&2; exit 1; }
+      # It exits when its kubectl proxy or server dies, so systemd alone restarts it.
+      unit=$units/supplychain-observe.service
+      exec="$supplychain observe --context $ctx --no-browser"
+    fi
     new=$(cat <<EOF
 [Unit]
-Description=Port-forward $what ($scheme://127.0.0.1:$lp) from $ctx
+Description=$what ($scheme://127.0.0.1:$lp) from $ctx
 After=network-online.target
 
 [Service]
-ExecStart=$bin/kpf-watch $scheme://127.0.0.1:$lp$path /usr/bin/env kubectl --context $ctx port-forward --address 127.0.0.1 -n $ns $target $ports
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=$exec
 Restart=always
 RestartSec=5
 
@@ -94,13 +108,18 @@ EOF
 )
     if [[ ! -f $unit || $(cat "$unit") != "$new" ]]; then
       printf '%s\n' "$new" > "$unit"
-      changed+=("$name-port-forward.service")
+      changed+=("$(basename "$unit")")
     fi
   done
   systemctl --user daemon-reload
   for l in "${links[@]}"; do
-    IFS='|' read -r name ctx _ <<<"$l"
-    [[ $ctx == - ]] || systemctl --user enable --now "$name-port-forward.service" 2>/dev/null
+    IFS='|' read -r name ctx _ target _ <<<"$l"
+    [[ $ctx == - ]] && continue
+    if [[ $target == observe ]]; then
+      systemctl --user enable --now supplychain-observe.service 2>/dev/null
+    else
+      systemctl --user enable --now "$name-port-forward.service" 2>/dev/null
+    fi
   done
   ((${#changed[@]})) && systemctl --user restart "${changed[@]}"
 

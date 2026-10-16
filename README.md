@@ -95,12 +95,20 @@ served tailnet-only, so it answers on devices signed in to the tailnet and nowhe
 | `https://pop-os.tailf8145.ts.net:9000/sonarqube/` | SonarQube | Tailnet | `default/sonarqube-sonarqube:9000` |
 | `https://pop-os.tailf8145.ts.net:3443/api/v1/log` | Rekor API, the build engine's transparency log | Tailnet | `rekor-system/rekor-server:443` |
 | `https://pop-os.tailf8145.ts.net:8443/` | for-kaniko-app, the sample workload in the read cluster | Tailnet | `workloads/for-kaniko-app:80` |
+| `https://pop-os.tailf8145.ts.net:8002/` | The solution's observer: supply chains, builds, signatures, Rekor entries, who may sign, admission policies, in the build cluster | Tailnet | `supplychain observe --context kind-blanketops --no-browser` on `127.0.0.1:8002` |
 
 Each tailnet link is a `kubectl port-forward` on `127.0.0.1`, run by a user systemd unit
 (`<name>-port-forward.service`) and served over HTTPS by `tailscale serve` on its own port. A port-forward keeps
 running after its pod is replaced but forwards nothing, so the units run it under `~/.local/bin/kpf-watch`, which
 exits when the local port stops answering and lets systemd start it again. Deleting the Tekton Dashboard pod
 brought its link back in about 15 seconds.
+
+The observer is the exception: `supplychain-observe.service` runs `supplychain observe` from the sibling
+repository's `bin/supplychain`, which starts its own `kubectl proxy` with this machine's credentials. It forwards
+only the Kubernetes reads its page makes and refuses everything else, Secrets and every write included, which is
+what makes it safe to serve beyond this machine. It exits when its proxy dies, so systemd alone restarts it.
+Rebuild the binary (`go build -o bin/supplychain ./cmd/cli`) and `systemctl --user restart supplychain-observe`
+to pick up a change.
 
 ```
 hack/tailnet-links.sh           # write the units and serve entries, then check every link
